@@ -1,6 +1,9 @@
 # Dockerfile
 FROM python:3.11-slim
 
+RUN useradd -m myuser
+USER myuser
+
 # Install pip and any dependencies (if needed)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
