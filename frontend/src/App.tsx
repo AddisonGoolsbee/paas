@@ -1,8 +1,17 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import { io } from "socket.io-client";
 
 const App: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
-  const [response, setResponse] = useState<string>("");
+  const [logs, setLogs] = useState<{ type: string; message: string; }[]>([]);
+  const [isUploading, setIsUploading] = useState<boolean>(false);
+  const terminalRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (terminalRef.current) {
+      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+    }
+  }, [logs]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -17,27 +26,42 @@ const App: React.FC = () => {
       return;
     }
 
+    setIsUploading(true);
+    setLogs([]); // Clear logs for new upload
+
     const formData = new FormData();
     formData.append("file", file);
 
     try {
-      const res = await fetch("http://192.168.5.1:5555/upload", {
+      await fetch("http://192.168.5.1:5555/upload", {
         method: "POST",
         body: formData,
       });
-      const data = await res.json();
-      setResponse(JSON.stringify(data, null, 2));
     } catch (err) {
       console.error(err);
       alert("An error occurred while uploading the file.");
+    } finally {
+      setIsUploading(false);
     }
   };
 
+  useEffect(() => {
+    const socket = io("http://192.168.5.1:5555");
+
+    socket.on("log", (data: { type: string; message: string }) => {
+      setLogs((prevLogs) => [...prevLogs, data]);
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
+
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-300">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white">
       <h1 className="text-3xl font-bold mb-6">Upload a Python Script</h1>
       <form
-        className="flex flex-col items-center space-y-4 bg-white p-6 rounded-lg shadow-lg"
+        className="flex flex-col items-center space-y-4 bg-gray-800 p-6 rounded-lg shadow-lg"
         onSubmit={handleSubmit}
       >
         <input
@@ -48,17 +72,34 @@ const App: React.FC = () => {
         />
         <button
           type="submit"
-          className="bg-blue-500 text-white py-2 px-4 rounded-md hover:bg-blue-600"
+          disabled={isUploading}
+          className={`py-2 px-4 rounded-md ${isUploading ? "bg-gray-500" : "bg-blue-500 hover:bg-blue-600"
+            }`}
         >
-          Submit
+          {isUploading ? "Uploading..." : "Submit"}
         </button>
       </form>
-      {response && (
-        <div className="mt-6 p-4 bg-gray-200 rounded-lg shadow-md w-96">
-          <h2 className="text-lg font-bold mb-2">Server Response:</h2>
-          <pre className="text-sm whitespace-pre-wrap">{response}</pre>
+      <div className="mt-6 p-4 bg-gray-800 rounded-lg shadow-md w-full max-w-3xl">
+        <h2 className="text-lg font-bold mb-2">Terminal Output:</h2>
+        <div
+          ref={terminalRef}
+          className="h-64 overflow-y-auto bg-black font-mono p-4 rounded"
+          style={{ whiteSpace: "pre-wrap" }}
+        >
+          {logs.length > 0
+            ? logs.map((log, index) => (
+              <div
+                key={index}
+                style={{
+                  color: log.type === "stdout" ? "white" : "red",
+                }}
+              >
+                {log.message}
+              </div>
+            ))
+            : "Waiting for logs..."}
         </div>
-      )}
+      </div>
     </div>
   );
 };

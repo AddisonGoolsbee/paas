@@ -1,13 +1,17 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
+from flask_socketio import SocketIO, emit
+from threading import Thread
 import os
 import subprocess
 import uuid
-from flask_cors import CORS
 import psutil
 import platform
 
 app = Flask(__name__)
 CORS(app, origins=["http://localhost:5173", "https://pass.birdflop.com"])
+socketio = SocketIO(app, cors_allowed_origins=["http://localhost:5173", "https://pass.birdflop.com"])
+
 UPLOAD_FOLDER = "/tmp/scripts"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
@@ -87,7 +91,7 @@ def upload_script():
 
     try:
         # Run the Docker container with the uploaded script
-        result = subprocess.run(
+        process = subprocess.Popen(
             [
                 "docker",
                 "run",
@@ -115,16 +119,31 @@ def upload_script():
                 "python",
                 "/app/script.py",
             ],
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            check=True,
+            bufsize=1,
         )
-        # Return stdout and stderr
-        return jsonify({"stdout": result.stdout, "stderr": result.stderr})
+
+
+
+        def stream_output(stream, tag):
+            for line in iter(stream.readline, ""):
+                socketio.emit("log", {"type": tag, "message": line.strip()})
+            stream.close()
+
+        # Start threads to stream stdout and stderr
+        Thread(target=stream_output, args=(process.stdout, "stdout"), daemon=True).start()
+        Thread(target=stream_output, args=(process.stderr, "stderr"), daemon=True).start()
+
+
+        process.wait()
+
+        return jsonify({"message": "Script execution complete"}), 200
 
     except subprocess.CalledProcessError as e:
         # Handle errors from the container
-        return jsonify({"stdout": e.stdout, "stderr": e.stderr, "error": str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
     finally:
         # Clean up the uploaded script
