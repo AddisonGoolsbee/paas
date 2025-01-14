@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from flask_socketio import SocketIO, emit
+from flask_socketio import join_room, SocketIO
 from threading import Thread
 import os
 import subprocess
@@ -88,9 +88,12 @@ def upload_script():
     script_path = os.path.join(UPLOAD_FOLDER, script_name)
     file.save(script_path)
     container_name = f"script-runner-{uuid.uuid4()}"
+    room_id = str(uuid.uuid4())
 
     try:
-        # Run the Docker container with the uploaded script
+        socketio.emit("room", {"room_id": room_id}, to=request.sid)
+
+        # Run the script in a Docker container
         process = subprocess.Popen(
             [
                 "docker",
@@ -125,30 +128,33 @@ def upload_script():
             bufsize=1,
         )
 
-
-
         def stream_output(stream, tag):
             for line in iter(stream.readline, ""):
-                socketio.emit("log", {"type": tag, "message": line.strip()})
+                socketio.emit("log", {"type": tag, "message": line.strip()}, to=room_id)
             stream.close()
 
         # Start threads to stream stdout and stderr
         Thread(target=stream_output, args=(process.stdout, "stdout"), daemon=True).start()
         Thread(target=stream_output, args=(process.stderr, "stderr"), daemon=True).start()
 
-
         process.wait()
 
-        return jsonify({"message": "Script execution complete"}), 200
+        return jsonify({"room_id": room_id, "message": "Script execution complete"}), 200
 
     except subprocess.CalledProcessError as e:
-        # Handle errors from the container
         return jsonify({"error": str(e)}), 500
 
     finally:
         # Clean up the uploaded script
         if os.path.exists(script_path):
             os.remove(script_path)
+
+
+@socketio.on("join")
+def handle_join(data):
+    room_id = data.get("room_id")
+    if room_id:
+        join_room(room_id)
 
 
 if __name__ == "__main__":
