@@ -1,0 +1,173 @@
+#!/usr/bin/env python3
+import argparse
+import uuid
+from flask import Flask, request
+from flask_cors import CORS
+from flask_socketio import SocketIO
+import pty
+import os
+import subprocess
+import select
+import termios
+import struct
+import fcntl
+import shlex
+import logging
+import sys
+import psutil
+from .utils.docker import setup_isolated_network
+
+logging.getLogger("werkzeug").setLevel(logging.ERROR)
+
+app = Flask(__name__, template_folder=".", static_folder=".", static_url_path="")
+app.config["SECRET_KEY"] = "secret!"
+
+# Shared dict: sid → {"child_pid": ..., "fd": ..., "container_name": ...}
+session_map = {}
+
+CORS(app, origins=["http://localhost:5173"])
+socketio = SocketIO(app, cors_allowed_origins=["http://localhost:5173"])
+
+UPLOAD_FOLDER = "/tmp/code"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+MAX_USERS = 20
+num_cpus = os.cpu_count() or 1
+memory_mb = psutil.virtual_memory().total // (1024 * 1024)
+
+cpu_per_user = round(num_cpus / MAX_USERS, 2)
+memory_per_user = round(memory_mb / MAX_USERS, 2)
+
+
+def set_winsize(fd, row, col, xpix=0, ypix=0):
+    logging.debug("setting window size with termios")
+    winsize = struct.pack("HHHH", row, col, xpix, ypix)
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, winsize)
+
+
+def read_and_forward_pty_output(sid):
+    max_read_bytes = 1024 * 20
+    fd = session_map[sid]["fd"]
+    try:
+        while True:
+            socketio.sleep(0.01)
+            if fd:
+                try:
+                    data_ready, _, _ = select.select([fd], [], [], 0)
+                    if data_ready:
+                        output = os.read(fd, max_read_bytes).decode(errors="ignore")
+                        socketio.emit("pty-output", {"output": output}, to=sid)
+                except (OSError, ValueError):
+                    break  # FD closed or invalid
+    finally:
+        logging.info(f"Stopping read thread for {sid}")
+
+
+@socketio.on("pty-input")
+def pty_input(data):
+    sid = request.sid
+    if sid in session_map:
+        fd = session_map[sid]["fd"]
+        os.write(fd, data["input"].encode())
+
+
+@socketio.on("resize")
+def resize(data):
+    sid = request.sid
+    if sid in session_map:
+        fd = session_map[sid]["fd"]
+        set_winsize(fd, data["rows"], data["cols"])
+
+
+@socketio.on("connect")
+def connect():
+    sid = request.sid
+    logging.info(f"client {sid} connected")
+
+    master_fd, slave_fd = pty.openpty()
+    container_name = f"terminal-session-{uuid.uuid4()}"
+
+    cmd = [
+        "docker",
+        "run",
+        "--name",
+        container_name,
+        "--hostname",
+        "paas",
+        "-i",
+        "-t",
+        # TODO: delete the container once you exit and nothing is running (maybe just --rm)
+        "--network=isolated_net",  # prevent containers from accessing other containers or host, but allows internet
+        "--cap-drop=ALL",  # prevent a bunch of admin linux stuff
+        "--user=1000:1000",  # login as a non-root user
+        # Security profiles
+        "--security-opt",
+        "no-new-privileges",  # prevent container from gaining priviledge
+        # "--security-opt",
+        # "seccomp",  # restricts syscalls
+        # Resource limits
+        "--cpus",
+        str(cpu_per_user),
+        "--memory",
+        f"{memory_per_user}m",
+        # TODO: bandwidth limit
+        # TODO: disk limit, perhaps by making everything read-only and adding a volume?
+        # "-v",
+        # f"{script_path}:/app/script.py:ro",  # mount script as read-only
+        # f"/dev/null:/app/script.py:ro",  # dummy mount to match runner profile
+        "paas",
+        "bash",
+    ]
+    proc = subprocess.Popen(cmd, stdin=slave_fd, stdout=slave_fd, stderr=slave_fd, close_fds=True)
+    session_map[sid] = {"fd": master_fd, "child_pid": proc.pid, "container_name": container_name}
+    socketio.start_background_task(read_and_forward_pty_output, sid)
+    logging.info(f"child pid for {sid} is {proc.pid}")
+
+
+@socketio.on("disconnect")
+def disconnect():
+    sid = request.sid
+    if sid in session_map:
+        try:
+            os.close(session_map[sid]["fd"])
+        except Exception as e:
+            logging.warning(f"Error closing PTY for {sid}: {e}")
+        del session_map[sid]
+        logging.info(f"Cleaned up session for {sid}")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description=("A fully functional terminal in your browser. " "https://github.com/cs01/pyxterm.js"),
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument("-p", "--port", default=5000, help="port to run server on", type=int)
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="host to run server on (use 0.0.0.0 to allow access from other hosts)",
+    )
+    parser.add_argument("--debug", action="store_true", help="debug the server")
+    parser.add_argument("--command", default="bash", help="Command to run in the terminal")
+    parser.add_argument(
+        "--cmd-args",
+        default="",
+        help="arguments to pass to command (i.e. --cmd-args='arg1 arg2 --flag')",
+    )
+    args = parser.parse_args()
+    app.config["cmd"] = [args.command] + shlex.split(args.cmd_args)
+    green = "\033[92m"
+    end = "\033[0m"
+    log_format = green + "pyxtermjs > " + end + "%(levelname)s (%(funcName)s:%(lineno)s) %(message)s"
+    logging.basicConfig(
+        format=log_format,
+        stream=sys.stdout,
+        level=logging.DEBUG if args.debug else logging.INFO,
+    )
+    logging.info(f"serving on http://{args.host}:{args.port}")
+    socketio.run(app, debug=args.debug, port=args.port, host=args.host)
+
+
+if __name__ == "__main__":
+    setup_isolated_network()
+    main()
