@@ -9,8 +9,8 @@ import psutil
 import platform
 
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:5173", "https://pass.birdflop.com"])
-socketio = SocketIO(app, cors_allowed_origins=["http://localhost:5173", "https://pass.birdflop.com"])
+CORS(app, origins=["http://localhost:5173", "https://paas.birdflop.com"])
+socketio = SocketIO(app, cors_allowed_origins=["http://localhost:5173", "https://paas.birdflop.com"])
 
 UPLOAD_FOLDER = "/tmp/scripts"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -90,8 +90,12 @@ def upload_script():
     container_name = f"script-runner-{uuid.uuid4()}"
     room_id = str(uuid.uuid4())
 
+    print(request.form)
+
     try:
-        socketio.emit("room", {"room_id": room_id}, to=request.sid)
+        sid = request.form.get("sid")
+        print(f"sid: {sid}")
+        socketio.emit("room", {"room_id": room_id}, to=sid)
 
         # Run the script in a Docker container
         process = subprocess.Popen(
