@@ -12,6 +12,7 @@ import logging
 import sys
 import atexit
 import signal
+import time
 
 from flask import Flask, redirect, request
 from flask_cors import CORS, cross_origin
@@ -129,7 +130,7 @@ def read_and_forward_pty_output(sid, is_authed):
 @socketio.on("pty-input")
 def pty_input(data):
     if not current_user.is_authenticated:
-        return
+        return "Unauthorized", 401
 
     sid = request.sid
     if sid in session_map:
@@ -148,11 +149,53 @@ def resize(data):
         set_winsize(fd, data["rows"], data["cols"])
 
 
+@app.route("/upload", methods=["POST"])
+def upload():
+    if not current_user.is_authenticated:
+        return "Unauthorized", 401
+
+    user_id = current_user.id
+    upload_dir = f"/tmp/paas_uploads/{user_id}"
+    os.makedirs(upload_dir, exist_ok=True)
+
+    files = request.files.getlist("file")
+    if not files:
+        return "No files provided", 400
+    for f in files:
+        print(f.filename)
+        f.save(os.path.join(upload_dir, f.filename))
+
+    return "File uploaded successfully", 200
+
+
+@app.route("/upload-folder", methods=["POST"])
+def upload_folder():
+    if not current_user.is_authenticated:
+        return "Unauthorized", 401
+
+    user_id = current_user.id
+    upload_dir = f"/tmp/paas_uploads/{user_id}"
+    os.makedirs(upload_dir, exist_ok=True)
+
+    files = request.files.getlist("files")
+    if not files:
+        return "No files provided", 400
+
+    for f in files:
+        safe_path = os.path.normpath(os.path.join(upload_dir, f.filename))
+        if not safe_path.startswith(upload_dir):
+            continue  # prevent directory traversal
+        os.makedirs(os.path.dirname(safe_path), exist_ok=True)
+        f.save(safe_path)
+
+    return "Folder uploaded successfully", 200
+
+
 @socketio.on("connect")
 def connect():
     if not current_user.is_authenticated:
         logging.warning("unauthenticated user tried to connect")
-        return False
+        return "Unauthorized", 401
 
     user_id = current_user.id
     sid = request.sid
@@ -167,7 +210,7 @@ def connect():
         master_fd, slave_fd = pty.openpty()
         container_name = f"user-container-{user_id}"
 
-        proc = spawn_container(sid, master_fd, slave_fd, container_name)
+        proc = spawn_container(user_id, slave_fd, container_name)
         fd = master_fd
         user_containers[user_id] = {"child_pid": proc.pid, "container_name": container_name}
         logging.info(f"Spawned new container for user {user_id}, pid {proc.pid}")
@@ -178,6 +221,9 @@ def connect():
 
 @socketio.on("disconnect")
 def disconnect():
+    # wait to prevent reload problems
+    time.sleep(1)
+
     sid = request.sid
     session = session_map.get(sid)
     if session:
@@ -247,6 +293,7 @@ def main():
     signal.signal(signal.SIGINT, lambda *_: sys.exit(0))
 
     setup_isolated_network()
+    os.makedirs("/tmp/paas_uploads", exist_ok=True)
     socketio.run(app, debug=args.debug, port=args.port, host=args.host)
 
 def cleanup_containers():

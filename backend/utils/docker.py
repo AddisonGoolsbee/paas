@@ -12,6 +12,7 @@ memory_mb = psutil.virtual_memory().total // (1024 * 1024)
 cpu_per_user = round(num_cpus / MAX_USERS, 2)
 memory_per_user = round(memory_mb / MAX_USERS, 2)
 
+
 def setup_isolated_network(network_name="isolated_net"):
     try:
         # Check if the network exists
@@ -60,7 +61,8 @@ def setup_isolated_network(network_name="isolated_net"):
     except subprocess.CalledProcessError as e:
         print(f"Failed to block host communication: {str(e)}")
 
-def spawn_container(sid, master_fd, slave_fd, container_name):
+
+def spawn_container(user_id, slave_fd, container_name):
     cmd = [
         "docker",
         "run",
@@ -86,9 +88,8 @@ def spawn_container(sid, master_fd, slave_fd, container_name):
         f"{memory_per_user}m",
         # TODO: bandwidth limit
         # TODO: disk limit, perhaps by making everything read-only and adding a volume?
-        # "-v",
-        # f"{script_path}:/app/script.py:ro",  # mount script as read-only
-        # f"/dev/null:/app/script.py:ro",  # dummy mount to match runner profile
+        "-v",
+        f"/tmp/paas_uploads/{user_id}:/app",
         "paas",
         "bash",
     ]

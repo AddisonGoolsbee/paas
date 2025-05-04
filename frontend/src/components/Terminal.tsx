@@ -5,6 +5,8 @@ import { SearchAddon } from "xterm-addon-search";
 import "xterm/css/xterm.css";
 import { io, Socket } from "socket.io-client";
 
+import UploadButton from "./UploadButton";
+
 const backendUrl = import.meta.env.VITE_BACKEND_URL;
 
 export default function TerminalComponent() {
@@ -52,11 +54,6 @@ export default function TerminalComponent() {
       term.write(data.output);
     });
 
-    // optionally notify backend of fixed size
-    // socket.on("connect", () => {
-    //   socket.emit("resize", { cols: 40, rows: 20 });
-    // });
-
     return () => {
       socket.disconnect();
       term.dispose();
@@ -65,12 +62,15 @@ export default function TerminalComponent() {
 
   return (
     <>
-      <button
-        onClick={handleLogout}
-        className="mb-2 px-4 py-1 rounded bg-red-500 text-white"
-      >
-        Logout
-      </button>
+      <div className="flex justify-between items-center mb-4">
+        <UploadButton />
+        <button
+          onClick={handleLogout}
+          className="mb-2 px-4 py-1 rounded bg-red-500 text-white"
+        >
+          Logout
+        </button>
+      </div>
       <div
         ref={terminalRef}
         style={{ width: "640px", height: "410px" }}
