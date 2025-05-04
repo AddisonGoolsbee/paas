@@ -1,17 +1,12 @@
 # TODO
 
-## Proof of Concept
-
-- Terminal which streams stdout, stderr, and stdin
-- Docker container spawned for each process
-
 ## MVP
 
+- Upload file/folder button which moves the folder to the container
 - Google account login
 - Database to keep track of users -> logged in user pulls up previous project
-- Upload a zip file optionally, and server will unzip and run project
 - Containers auto-close when not running
-- Containers have resource caps on CPU, network, RAM, etc
+- Containers have better resource caps on CPU, network, RAM, etc
 - Terminate button
 
 ## Important
