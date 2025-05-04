@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import argparse
-import uuid
+import subprocess
 import pty
 import os
 import select
@@ -10,6 +10,8 @@ import fcntl
 import shlex
 import logging
 import sys
+import atexit
+import signal
 
 from flask import Flask, redirect, request
 from flask_cors import CORS, cross_origin
@@ -179,17 +181,38 @@ def disconnect():
     sid = request.sid
     session = session_map.get(sid)
     if session:
+        user_id = session["user_id"]
         try:
             os.close(session["fd"])
         except Exception as e:
             logging.warning(f"Error closing PTY for {sid}: {e}")
         del session_map[sid]
         logging.info(f"Cleaned up session for {sid}")
+    
+     # If no other sessions for this user, check container status
+        if user_id not in [s["user_id"] for s in session_map.values()]:
+            info = user_containers.get(user_id)
+            if info:
+                container_name = info["container_name"]
+                try:
+                    # Check if anything is still running in container
+                    result = subprocess.run(
+                        ["docker", "exec", container_name, "pgrep", "-x", "bash"],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                    )
+                    logging.info(f"Result: {result.returncode}")
+                    if result.returncode != 0:
+                        # No bash process = container idle, safe to remove
+                        subprocess.run(["docker", "rm", "-f", container_name], check=True)
+                        del user_containers[user_id]
+                        logging.info(f"Removed idle container {container_name}")
+                except Exception as e:
+                    logging.warning(f"Error checking/removing container {container_name}: {e}")
 
 
 def main():
-    setup_isolated_network()
-
     parser = argparse.ArgumentParser(
         description=("A fully functional terminal in your browser. " "https://github.com/cs01/pyxterm.js"),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -218,14 +241,22 @@ def main():
         level=logging.DEBUG if args.debug else logging.INFO,
     )
     logging.info(f"serving on http://{args.host}:{args.port}")
+
+    atexit.register(cleanup_containers)
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    signal.signal(signal.SIGINT, lambda *_: sys.exit(0))
+
+    setup_isolated_network()
     socketio.run(app, debug=args.debug, port=args.port, host=args.host)
 
-
-@app.after_request
-def add_cors_headers(response):
-    response.headers["Access-Control-Allow-Origin"] = "http://localhost:5173"
-    response.headers["Access-Control-Allow-Credentials"] = "true"
-    return response
+def cleanup_containers():
+    for info in user_containers.values():
+        name = info["container_name"]
+        logging.info(f"Stopping and removing container {name}")
+        try:
+            subprocess.run(["docker", "rm", "-f", name], check=True)
+        except subprocess.CalledProcessError as e:
+            logging.warning(f"Failed to remove container {name}: {e}")
 
 
 if __name__ == "__main__":

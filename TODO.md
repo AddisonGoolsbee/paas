@@ -1,14 +1,20 @@
 # TODO
 
+## Design Questions
+
+- For auto-closing containers: should all connections to the same account be on the same session (e.g. share one tmux window)? And then you could probably track if there's no behavior vs behavior and shut it down that way
+- Or you can do normal terminal, have multiple sessions, and when there are no sessions it stops (but then it doesn't continue ever)
+    - You could have a special edge case where if you run this script with a python file/directory then that python project will run and stay alive after you close all sessions?
+
 ## MVP
 
 - Google account login DONE
 - Session tracking DONE
+- Logout DONE
 - Upload files
-- Logout
 - Containers auto-close when not running
-- Containers have better resource caps on CPU, network, RAM, etc
 - Terminate button
+- Containers have better resource caps on CPU, network, RAM, etc
 - Half-decent UI
 
 ## Important
