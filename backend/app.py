@@ -10,22 +10,87 @@ import fcntl
 import shlex
 import logging
 import sys
-from flask import Flask, request
-from flask_cors import CORS
+
+from flask import Flask, redirect, request
+from flask_cors import CORS, cross_origin
 from flask_socketio import SocketIO
+from flask_login import LoginManager, login_user, login_required, logout_user, current_user, UserMixin
+from requests_oauthlib import OAuth2Session
+from dotenv import load_dotenv
 
 from .utils.docker import setup_isolated_network, spawn_container
 
 logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
+os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"  # Only for localhost/dev
+load_dotenv()
+
 app = Flask(__name__, template_folder=".", static_folder=".", static_url_path="")
 app.config["SECRET_KEY"] = "secret!"
+CORS(app, origins=["http://localhost:5173"], supports_credentials=True)
+socketio = SocketIO(app, cors_allowed_origins=["http://localhost:5173"], manage_session=False)
+
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+REDIRECT_URI = "http://localhost:5555/callback"
+
+login_manager = LoginManager()
+login_manager.init_app(app)
+
+
+class User(UserMixin):
+    def __init__(self, id_, email):
+        self.id = id_
+        self.email = email
+
+
+users = {}
+
+
+@login_manager.user_loader
+def load_user(user_id):
+    return users.get(user_id)
+
+
+@app.route("/login")
+def login():
+    google = OAuth2Session(GOOGLE_CLIENT_ID, redirect_uri=REDIRECT_URI, scope=["openid", "email", "profile"])
+    auth_url, _ = google.authorization_url(
+        "https://accounts.google.com/o/oauth2/auth", access_type="offline", prompt="select_account"
+    )
+    return redirect(auth_url)
+
+
+@app.route("/callback")
+def callback():
+    google = OAuth2Session(GOOGLE_CLIENT_ID, redirect_uri=REDIRECT_URI)
+    google.fetch_token(
+        "https://oauth2.googleapis.com/token",
+        client_secret=GOOGLE_CLIENT_SECRET,
+        authorization_response=request.url,
+    )
+    user_info = google.get("https://www.googleapis.com/oauth2/v2/userinfo").json()
+    user = User(user_info["id"], user_info["email"])
+    users[user.id] = user
+    login_user(user)
+    return redirect("http://localhost:5173/terminal")
+
+
+@app.route("/logout")
+def logout():
+    logout_user()
+    return redirect("http://localhost:5173")
+
+
+@app.route("/me")
+def me():
+    if current_user.is_authenticated:
+        return {"email": current_user.email}
+    return {"error": "unauthenticated"}, 401
+
 
 # Shared dict: sid → {"child_pid": ..., "fd": ..., "container_name": ...}
 session_map = {}
-
-CORS(app, origins=["http://localhost:5173"])
-socketio = SocketIO(app, cors_allowed_origins=["http://localhost:5173"])
 
 
 def set_winsize(fd, row, col, xpix=0, ypix=0):
@@ -34,7 +99,10 @@ def set_winsize(fd, row, col, xpix=0, ypix=0):
     fcntl.ioctl(fd, termios.TIOCSWINSZ, winsize)
 
 
-def read_and_forward_pty_output(sid):
+def read_and_forward_pty_output(sid, is_authed):
+    if not is_authed:
+        return
+
     max_read_bytes = 1024 * 20
     fd = session_map[sid]["fd"]
     try:
@@ -54,6 +122,9 @@ def read_and_forward_pty_output(sid):
 
 @socketio.on("pty-input")
 def pty_input(data):
+    if not current_user.is_authenticated:
+        return
+
     sid = request.sid
     if sid in session_map:
         fd = session_map[sid]["fd"]
@@ -62,6 +133,9 @@ def pty_input(data):
 
 @socketio.on("resize")
 def resize(data):
+    if not current_user.is_authenticated:
+        return
+
     sid = request.sid
     if sid in session_map:
         fd = session_map[sid]["fd"]
@@ -70,22 +144,28 @@ def resize(data):
 
 @socketio.on("connect")
 def connect():
+    if not current_user.is_authenticated:
+        logging.warning("unauthenticated user tried to connect")
+        return False
+
     sid = request.sid
     logging.info(f"client {sid} connected")
 
     master_fd, slave_fd = pty.openpty()
-
     container_name = f"terminal-session-{uuid.uuid4()}"
 
     proc = spawn_container(sid, master_fd, slave_fd, container_name)
-    
     session_map[sid] = {"fd": master_fd, "child_pid": proc.pid, "container_name": container_name}
-    socketio.start_background_task(read_and_forward_pty_output, sid)
+    is_authed = current_user.is_authenticated
+    socketio.start_background_task(read_and_forward_pty_output, sid, is_authed)
     logging.info(f"child pid for {sid} is {proc.pid}")
 
 
 @socketio.on("disconnect")
 def disconnect():
+    if not current_user.is_authenticated:
+        return
+
     sid = request.sid
     if sid in session_map:
         try:
@@ -101,10 +181,10 @@ def main():
         description=("A fully functional terminal in your browser. " "https://github.com/cs01/pyxterm.js"),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("-p", "--port", default=5000, help="port to run server on", type=int)
+    parser.add_argument("-p", "--port", default=5555, help="port to run server on", type=int)
     parser.add_argument(
         "--host",
-        default="127.0.0.1",
+        default="localhost",
         help="host to run server on (use 0.0.0.0 to allow access from other hosts)",
     )
     parser.add_argument("--debug", action="store_true", help="debug the server")
@@ -126,6 +206,13 @@ def main():
     )
     logging.info(f"serving on http://{args.host}:{args.port}")
     socketio.run(app, debug=args.debug, port=args.port, host=args.host)
+
+
+@app.after_request
+def add_cors_headers(response):
+    response.headers["Access-Control-Allow-Origin"] = "http://localhost:5173"
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    return response
 
 
 if __name__ == "__main__":

@@ -32,7 +32,9 @@ export default function TerminalComponent() {
 
     term.writeln("Welcome to paas!");
 
-    const socket = io(backendUrl);
+    const socket = io(backendUrl, {
+      withCredentials: true,
+    });
     socketRef.current = socket;
 
     term.onData((data) => {
