@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 import argparse
 import uuid
-from flask import Flask, request
-from flask_cors import CORS
-from flask_socketio import SocketIO
 import pty
 import os
 import subprocess
@@ -14,7 +11,11 @@ import fcntl
 import shlex
 import logging
 import sys
+from flask import Flask, request
+from flask_cors import CORS
+from flask_socketio import SocketIO
 import psutil
+
 from .utils.docker import setup_isolated_network
 
 logging.getLogger("werkzeug").setLevel(logging.ERROR)
