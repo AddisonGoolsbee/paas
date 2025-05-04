@@ -1,6 +1,15 @@
+import os
 import subprocess
 import platform
 
+import psutil
+
+MAX_USERS = 20
+num_cpus = os.cpu_count() or 1
+memory_mb = psutil.virtual_memory().total // (1024 * 1024)
+
+cpu_per_user = round(num_cpus / MAX_USERS, 2)
+memory_per_user = round(memory_mb / MAX_USERS, 2)
 
 def setup_isolated_network(network_name="isolated_net"):
     try:
@@ -51,3 +60,39 @@ def setup_isolated_network(network_name="isolated_net"):
         print(f"Blocked host communication for network {network_name}.")
     except subprocess.CalledProcessError as e:
         print(f"Failed to block host communication: {str(e)}")
+
+def spawn_container(sid, master_fd, slave_fd, container_name):
+    cmd = [
+        "docker",
+        "run",
+        "--name",
+        container_name,
+        "--hostname",
+        "paas",
+        "-i",
+        "-t",
+        # TODO: delete the container once you exit and nothing is running (maybe just --rm)
+        "--network=isolated_net",  # prevent containers from accessing other containers or host, but allows internet
+        "--cap-drop=ALL",  # prevent a bunch of admin linux stuff
+        "--user=1000:1000",  # login as a non-root user
+        # Security profiles
+        "--security-opt",
+        "no-new-privileges",  # prevent container from gaining priviledge
+        # "--security-opt",
+        # "seccomp",  # restricts syscalls
+        # Resource limits
+        "--cpus",
+        str(cpu_per_user),
+        "--memory",
+        f"{memory_per_user}m",
+        # TODO: bandwidth limit
+        # TODO: disk limit, perhaps by making everything read-only and adding a volume?
+        # "-v",
+        # f"{script_path}:/app/script.py:ro",  # mount script as read-only
+        # f"/dev/null:/app/script.py:ro",  # dummy mount to match runner profile
+        "paas",
+        "bash",
+    ]
+
+    proc = subprocess.Popen(cmd, stdin=slave_fd, stdout=slave_fd, stderr=slave_fd, close_fds=True)
+    return proc

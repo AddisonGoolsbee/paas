@@ -3,7 +3,6 @@ import argparse
 import uuid
 import pty
 import os
-import subprocess
 import select
 import termios
 import struct
@@ -14,9 +13,8 @@ import sys
 from flask import Flask, request
 from flask_cors import CORS
 from flask_socketio import SocketIO
-import psutil
 
-from .utils.docker import setup_isolated_network
+from .utils.docker import setup_isolated_network, spawn_container
 
 logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
@@ -28,16 +26,6 @@ session_map = {}
 
 CORS(app, origins=["http://localhost:5173"])
 socketio = SocketIO(app, cors_allowed_origins=["http://localhost:5173"])
-
-UPLOAD_FOLDER = "/tmp/code"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-MAX_USERS = 20
-num_cpus = os.cpu_count() or 1
-memory_mb = psutil.virtual_memory().total // (1024 * 1024)
-
-cpu_per_user = round(num_cpus / MAX_USERS, 2)
-memory_per_user = round(memory_mb / MAX_USERS, 2)
 
 
 def set_winsize(fd, row, col, xpix=0, ypix=0):
@@ -86,40 +74,11 @@ def connect():
     logging.info(f"client {sid} connected")
 
     master_fd, slave_fd = pty.openpty()
+
     container_name = f"terminal-session-{uuid.uuid4()}"
 
-    cmd = [
-        "docker",
-        "run",
-        "--name",
-        container_name,
-        "--hostname",
-        "paas",
-        "-i",
-        "-t",
-        # TODO: delete the container once you exit and nothing is running (maybe just --rm)
-        "--network=isolated_net",  # prevent containers from accessing other containers or host, but allows internet
-        "--cap-drop=ALL",  # prevent a bunch of admin linux stuff
-        "--user=1000:1000",  # login as a non-root user
-        # Security profiles
-        "--security-opt",
-        "no-new-privileges",  # prevent container from gaining priviledge
-        # "--security-opt",
-        # "seccomp",  # restricts syscalls
-        # Resource limits
-        "--cpus",
-        str(cpu_per_user),
-        "--memory",
-        f"{memory_per_user}m",
-        # TODO: bandwidth limit
-        # TODO: disk limit, perhaps by making everything read-only and adding a volume?
-        # "-v",
-        # f"{script_path}:/app/script.py:ro",  # mount script as read-only
-        # f"/dev/null:/app/script.py:ro",  # dummy mount to match runner profile
-        "paas",
-        "bash",
-    ]
-    proc = subprocess.Popen(cmd, stdin=slave_fd, stdout=slave_fd, stderr=slave_fd, close_fds=True)
+    proc = spawn_container(sid, master_fd, slave_fd, container_name)
+    
     session_map[sid] = {"fd": master_fd, "child_pid": proc.pid, "container_name": container_name}
     socketio.start_background_task(read_and_forward_pty_output, sid)
     logging.info(f"child pid for {sid} is {proc.pid}")

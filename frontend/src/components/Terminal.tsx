@@ -1,7 +1,5 @@
-// src/components/Terminal.tsx
 import { useEffect, useRef } from "react";
 import { Terminal } from "xterm";
-// import { FitAddon } from "xterm-addon-fit";
 import { WebLinksAddon } from "xterm-addon-web-links";
 import { SearchAddon } from "xterm-addon-search";
 import "xterm/css/xterm.css";
@@ -21,11 +19,9 @@ export default function TerminalComponent() {
       macOptionIsMeta: true,
       scrollback: 1000,
     });
-    // const fit = new FitAddon();
     const webLinks = new WebLinksAddon();
     const search = new SearchAddon();
 
-    // term.loadAddon(fit);
     term.loadAddon(webLinks);
     term.loadAddon(search);
 

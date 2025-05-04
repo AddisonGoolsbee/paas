@@ -17,6 +17,7 @@
 - If server overloaded, disallow new entries
 - Give an ip address
 - ip tracking for security
+- Loading until it loads
 
 ## Other Stuff
 
