@@ -18,7 +18,7 @@ from flask_login import LoginManager, login_user, login_required, logout_user, c
 from requests_oauthlib import OAuth2Session
 from dotenv import load_dotenv
 
-from .utils.docker import setup_isolated_network, spawn_container
+from .utils.docker import attach_to_container, setup_isolated_network, spawn_container
 
 logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
@@ -89,8 +89,12 @@ def me():
     return {"error": "unauthenticated"}, 401
 
 
-# Shared dict: sid → {"child_pid": ..., "fd": ..., "container_name": ...}
+# each user gets a single container. But if they have multiple tabs open, each session will get its own sid (resize properties etc)
+
+# sid → {"child_pid": ..., "fd": ..., "container_name": ...}
 session_map = {}
+# user_id → container info
+user_containers = {}
 
 
 def set_winsize(fd, row, col, xpix=0, ypix=0):
@@ -148,28 +152,35 @@ def connect():
         logging.warning("unauthenticated user tried to connect")
         return False
 
+    user_id = current_user.id
     sid = request.sid
     logging.info(f"client {sid} connected")
 
-    master_fd, slave_fd = pty.openpty()
-    container_name = f"terminal-session-{uuid.uuid4()}"
+    # Reuse existing container if present
+    if user_id in user_containers:
+        container_info = user_containers[user_id]
+        proc, fd = attach_to_container(container_info["container_name"])
+        logging.info(f"Reusing container for user {user_id}")
+    else:
+        master_fd, slave_fd = pty.openpty()
+        container_name = f"user-container-{user_id}"
 
-    proc = spawn_container(sid, master_fd, slave_fd, container_name)
-    session_map[sid] = {"fd": master_fd, "child_pid": proc.pid, "container_name": container_name}
-    is_authed = current_user.is_authenticated
-    socketio.start_background_task(read_and_forward_pty_output, sid, is_authed)
-    logging.info(f"child pid for {sid} is {proc.pid}")
+        proc = spawn_container(sid, master_fd, slave_fd, container_name)
+        fd = master_fd
+        user_containers[user_id] = {"child_pid": proc.pid, "container_name": container_name}
+        logging.info(f"Spawned new container for user {user_id}, pid {proc.pid}")
+
+    session_map[sid] = {"fd": fd, "user_id": user_id}
+    socketio.start_background_task(read_and_forward_pty_output, sid, True)
 
 
 @socketio.on("disconnect")
 def disconnect():
-    if not current_user.is_authenticated:
-        return
-
     sid = request.sid
-    if sid in session_map:
+    session = session_map.get(sid)
+    if session:
         try:
-            os.close(session_map[sid]["fd"])
+            os.close(session["fd"])
         except Exception as e:
             logging.warning(f"Error closing PTY for {sid}: {e}")
         del session_map[sid]
@@ -177,6 +188,8 @@ def disconnect():
 
 
 def main():
+    setup_isolated_network()
+
     parser = argparse.ArgumentParser(
         description=("A fully functional terminal in your browser. " "https://github.com/cs01/pyxterm.js"),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -216,5 +229,4 @@ def add_cors_headers(response):
 
 
 if __name__ == "__main__":
-    setup_isolated_network()
     main()

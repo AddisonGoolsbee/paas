@@ -1,4 +1,5 @@
 import os
+import pty
 import subprocess
 import platform
 
@@ -12,6 +13,7 @@ cpu_per_user = round(num_cpus / MAX_USERS, 2)
 memory_per_user = round(memory_mb / MAX_USERS, 2)
 
 def setup_isolated_network(network_name="isolated_net"):
+    print("Setting up isolated network...")
     try:
         # Check if the network exists
         subprocess.run(
@@ -40,7 +42,6 @@ def setup_isolated_network(network_name="isolated_net"):
         print(f"Network {network_name} created successfully.")
 
     if platform.system() != "Linux":
-        print("Skipping iptables setup as it is only supported on Linux.")
         return
 
     try:
@@ -96,3 +97,15 @@ def spawn_container(sid, master_fd, slave_fd, container_name):
 
     proc = subprocess.Popen(cmd, stdin=slave_fd, stdout=slave_fd, stderr=slave_fd, close_fds=True)
     return proc
+
+
+def attach_to_container(container_name):
+    master_fd, slave_fd = pty.openpty()
+    proc = subprocess.Popen(
+        ["docker", "exec", "-it", container_name, "bash"],
+        stdin=slave_fd,
+        stdout=slave_fd,
+        stderr=slave_fd,
+        close_fds=True,
+    )
+    return proc, master_fd
