@@ -15,8 +15,28 @@ function App() {
     });
   }, []);
 
-  if (authed === null) return <div>Loading...</div>;
-  return authed ? <Terminal /> : <Login />;
+  if (authed === null)
+    return (
+      <div className="h-screen w-screen flex items-center justify-center">
+        Loading...
+      </div>
+    );
+
+  if (!authed)
+    return (
+      <div className="h-screen w-screen flex items-center justify-center flex-col gap-4">
+        <div className="text-3xl font-bold tracking-wide">
+          Birdflop Server Access
+        </div>
+        <Login />
+      </div>
+    );
+
+  return (
+    <div className="h-screen w-screen flex flex-col items-center justify-center">
+      <Terminal />
+    </div>
+  );
 }
 
 export default App;

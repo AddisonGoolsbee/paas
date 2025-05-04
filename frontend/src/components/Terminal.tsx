@@ -3,6 +3,7 @@ import { Terminal } from "xterm";
 import { WebLinksAddon } from "xterm-addon-web-links";
 import { SearchAddon } from "xterm-addon-search";
 import "xterm/css/xterm.css";
+import { FitAddon } from "xterm-addon-fit";
 import { io, Socket } from "socket.io-client";
 
 import UploadButton from "./UploadButton";
@@ -30,13 +31,16 @@ export default function TerminalComponent() {
     });
     const webLinks = new WebLinksAddon();
     const search = new SearchAddon();
+    const fitAddon = new FitAddon();
+    term.loadAddon(fitAddon);
 
     term.loadAddon(webLinks);
     term.loadAddon(search);
 
     term.open(terminalRef.current);
     requestAnimationFrame(() => {
-      term.resize(70, 24);
+      fitAddon.fit();
+      term.focus();
     });
 
     term.writeln("Welcome to paas!");
@@ -73,8 +77,7 @@ export default function TerminalComponent() {
       </div>
       <div
         ref={terminalRef}
-        style={{ width: "640px", height: "410px" }}
-        className="border border-gray-300"
+        className="border border-gray-300 rounded-sm p-1 bg-black w-[calc(100%-2rem)] md:w-full max-w-screen-md h-2/3 mx-2 sm:mx-4"
       />
     </>
   );
