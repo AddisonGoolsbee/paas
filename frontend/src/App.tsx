@@ -33,7 +33,7 @@ const App: React.FC = () => {
     formData.append("file", file);
 
     try {
-      await fetch("http://192.168.5.1:5555/upload", {
+      await fetch("http://172.27.69.26:5555/upload", {
         method: "POST",
         body: formData,
       });
@@ -46,13 +46,27 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    const socket = io("http://192.168.5.1:5555");
+    const socket = io("http://172.27.69.26:5555");
+
+    let roomId: string | null = null;
+
+    socket.on("connect", () => {
+      console.log("WebSocket connected:", socket.id);
+    });
+
+    socket.on("room", (data: { room_id: string }) => {
+      roomId = data.room_id;
+      socket.emit("join", { room_id: roomId });
+    });
 
     socket.on("log", (data: { type: string; message: string }) => {
       setLogs((prevLogs) => [...prevLogs, data]);
     });
 
     return () => {
+      if (roomId) {
+        socket.emit("leave", { room_id: roomId });
+      }
       socket.disconnect();
     };
   }, []);
