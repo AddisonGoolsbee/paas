@@ -14,7 +14,7 @@ import sys
 from flask import Flask, redirect, request
 from flask_cors import CORS, cross_origin
 from flask_socketio import SocketIO
-from flask_login import LoginManager, login_user, login_required, logout_user, current_user, UserMixin
+from flask_login import LoginManager, login_user, logout_user, current_user, UserMixin
 from requests_oauthlib import OAuth2Session
 from dotenv import load_dotenv
 
@@ -79,7 +79,7 @@ def callback():
 @app.route("/logout")
 def logout():
     logout_user()
-    return redirect("http://localhost:5173")
+    return "", 200
 
 
 @app.route("/me")

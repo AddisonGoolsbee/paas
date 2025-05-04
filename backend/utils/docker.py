@@ -13,7 +13,6 @@ cpu_per_user = round(num_cpus / MAX_USERS, 2)
 memory_per_user = round(memory_mb / MAX_USERS, 2)
 
 def setup_isolated_network(network_name="isolated_net"):
-    print("Setting up isolated network...")
     try:
         # Check if the network exists
         subprocess.run(
@@ -25,7 +24,6 @@ def setup_isolated_network(network_name="isolated_net"):
         )
     except subprocess.CalledProcessError:
         # Network doesn't exist, so create it
-        print(f"Creating network {network_name}...")
         subprocess.run(
             [
                 "docker",

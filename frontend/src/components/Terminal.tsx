@@ -11,6 +11,13 @@ export default function TerminalComponent() {
   const terminalRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<Socket>(null);
 
+  const handleLogout = async () => {
+    await fetch(`${backendUrl}/logout`, {
+      credentials: "include",
+    });
+    window.location.href = "/";
+  };
+
   useEffect(() => {
     if (!terminalRef.current) return;
 
@@ -57,10 +64,18 @@ export default function TerminalComponent() {
   }, []);
 
   return (
-    <div
-      ref={terminalRef}
-      style={{ width: "640px", height: "410px" }} // roughly fits 40x20
-      className="border border-gray-300"
-    />
+    <>
+      <button
+        onClick={handleLogout}
+        className="mb-2 px-4 py-1 rounded bg-red-500 text-white"
+      >
+        Logout
+      </button>
+      <div
+        ref={terminalRef}
+        style={{ width: "640px", height: "410px" }}
+        className="border border-gray-300"
+      />
+    </>
   );
 }

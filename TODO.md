@@ -2,9 +2,10 @@
 
 ## MVP
 
-- Upload file/folder button which moves the folder to the container
-- Google account login
-- Database to keep track of users -> logged in user pulls up previous project
+- Google account login DONE
+- Session tracking DONE
+- Upload files
+- Logout
 - Containers auto-close when not running
 - Containers have better resource caps on CPU, network, RAM, etc
 - Terminate button
@@ -18,6 +19,7 @@
 - Give an ip address
 - ip tracking for security
 - Loading until it loads
+- If user loses connection with container go back to loading screen
 
 ## Other Stuff
 
