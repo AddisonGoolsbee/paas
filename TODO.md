@@ -11,9 +11,9 @@
 - Google account login DONE
 - Session tracking DONE
 - Logout DONE
-- Upload files
 - Containers auto-close when not running
 - Terminate button
+- Upload files
 - Containers have better resource caps on CPU, network, RAM, etc
 - Half-decent UI
 
