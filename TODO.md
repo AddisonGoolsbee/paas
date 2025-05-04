@@ -8,13 +8,15 @@
 - Containers auto-close when not running
 - Containers have better resource caps on CPU, network, RAM, etc
 - Terminate button
+- Half-decent UI
 
 ## Important
 
 - IDE for editing your whole project (look for something online)
 - Auto-terminate after 7 non-login days
 - If server overloaded, disallow new entries
-- ip tracking
+- Give an ip address
+- ip tracking for security
 
 ## Other Stuff
 
