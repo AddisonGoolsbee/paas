@@ -29,15 +29,15 @@ os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"  # Only for localhost/dev
 load_dotenv()
 
 app = Flask(__name__, template_folder=".", static_folder=".", static_url_path="")
-app.config["SECRET_KEY"] = os.getenv("SECRET_KEY")
+app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET")
 
-FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN")
+FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN_DEV")
 CORS(app, origins=[FRONTEND_ORIGIN], supports_credentials=True)
 socketio = SocketIO(app, cors_allowed_origins=[FRONTEND_ORIGIN], manage_session=False)
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-REDIRECT_URI = os.getenv("REDIRECT_URI")
+REDIRECT_URI = os.getenv("REDIRECT_URI_DEV")
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -78,7 +78,7 @@ def callback():
     user = User(user_info["id"], user_info["email"])
     users[user.id] = user
     login_user(user)
-    return redirect("http://localhost:5173/terminal")
+    return redirect(f"{FRONTEND_ORIGIN}/terminal")
 
 
 @app.route("/logout")
@@ -259,29 +259,14 @@ def disconnect():
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    parser.add_argument("-p", "--port", default=5555, help="port to run server on", type=int)
-    parser.add_argument(
-        "--host",
-        default="localhost",
-        help="host to run server on (use 0.0.0.0 to allow access from other hosts)",
-    )
-    parser.add_argument("--debug", action="store_true", help="debug the server")
-    parser.add_argument("--command", default="bash", help="Command to run in the terminal")
-    parser.add_argument(
-        "--cmd-args",
-        default="",
-        help="arguments to pass to command (i.e. --cmd-args='arg1 arg2 --flag')",
-    )
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-p", "--port", default=5555, type=int)
+    parser.add_argument("--host", default="localhost")
+    parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
-    app.config["cmd"] = [args.command] + shlex.split(args.cmd_args)
-    green = "\033[92m"
-    end = "\033[0m"
-    log_format = green + "pyxtermjs > " + end + "%(levelname)s (%(funcName)s:%(lineno)s) %(message)s"
+
     logging.basicConfig(
-        format=log_format,
+        format="%(levelname)s (%(funcName)s:%(lineno)s) %(message)s",
         stream=sys.stdout,
         level=logging.DEBUG if args.debug else logging.INFO,
     )
