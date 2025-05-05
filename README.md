@@ -1,6 +1,6 @@
 # PAAS
 
-*This is a mirror. See upstream: <https://github.com/birdflop/pass>*
+*This is a mirror. See upstream: <https://github.com/birdflop/paas>*
 
 Birdflop service for free educational server usage. Called PaaS for no particular reason, started as Python-as-a-Service but now it's just kind of everything. Like Google Colab but way more basic.
 
