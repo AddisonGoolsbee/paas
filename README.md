@@ -1,6 +1,6 @@
 # PAAS
 
-Service for free educational server usage.
+Birdflop service for free educational server usage. Called PaaS for no particular reason, started as Python-as-a-Service but now it's just kind of everything. Like Google Colab but way more basic.
 
 ## Development
 

@@ -15,7 +15,7 @@ import signal
 import time
 
 from flask import Flask, redirect, request
-from flask_cors import CORS, cross_origin
+from flask_cors import CORS
 from flask_socketio import SocketIO
 from flask_login import LoginManager, login_user, logout_user, current_user, UserMixin
 from requests_oauthlib import OAuth2Session
@@ -29,13 +29,15 @@ os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"  # Only for localhost/dev
 load_dotenv()
 
 app = Flask(__name__, template_folder=".", static_folder=".", static_url_path="")
-app.config["SECRET_KEY"] = "secret!"
-CORS(app, origins=["http://localhost:5173"], supports_credentials=True)
-socketio = SocketIO(app, cors_allowed_origins=["http://localhost:5173"], manage_session=False)
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY")
+
+FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN")
+CORS(app, origins=[FRONTEND_ORIGIN], supports_credentials=True)
+socketio = SocketIO(app, cors_allowed_origins=[FRONTEND_ORIGIN], manage_session=False)
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-REDIRECT_URI = "http://localhost:5555/callback"
+REDIRECT_URI = os.getenv("REDIRECT_URI")
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -93,7 +95,6 @@ def me():
 
 
 # each user gets a single container. But if they have multiple tabs open, each session will get its own sid (resize properties etc)
-
 # sid → {"child_pid": ..., "fd": ..., "container_name": ...}
 session_map = {}
 # user_id → container info
@@ -233,8 +234,8 @@ def disconnect():
             logging.warning(f"Error closing PTY for {sid}: {e}")
         del session_map[sid]
         logging.info(f"Cleaned up session for {sid}")
-    
-     # If no other sessions for this user, check container status
+
+        # If no other sessions for this user, check container status
         if user_id not in [s["user_id"] for s in session_map.values()]:
             info = user_containers.get(user_id)
             if info:
@@ -259,7 +260,6 @@ def disconnect():
 
 def main():
     parser = argparse.ArgumentParser(
-        description=("A fully functional terminal in your browser. " "https://github.com/cs01/pyxterm.js"),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("-p", "--port", default=5555, help="port to run server on", type=int)
@@ -294,6 +294,7 @@ def main():
     setup_isolated_network()
     os.makedirs("/tmp/paas_uploads", exist_ok=True)
     socketio.run(app, debug=args.debug, port=args.port, host=args.host)
+
 
 def cleanup_containers():
     for info in user_containers.values():
