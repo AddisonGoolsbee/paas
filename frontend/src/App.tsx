@@ -4,15 +4,19 @@ import Login from "./components/Login";
 
 const backendUrl = import.meta.env.VITE_BACKEND_URL;
 
-function App() {
+export default function App() {
   const [authed, setAuthed] = useState<boolean | null>(null);
 
   useEffect(() => {
-    fetch(`${backendUrl}/me`, {
-      credentials: "include",
-    }).then(async (res) => {
-      setAuthed(res.ok);
-    });
+    const checkAuth = async () => {
+      try {
+        const res = await fetch(`${backendUrl}/me`, { credentials: "include" });
+        setAuthed(res.ok);
+      } catch {
+        setAuthed(false);
+      }
+    };
+    checkAuth();
   }, []);
 
   if (authed === null)
@@ -38,5 +42,3 @@ function App() {
     </div>
   );
 }
-
-export default App;
