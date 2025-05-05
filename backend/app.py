@@ -7,92 +7,38 @@ import select
 import termios
 import struct
 import fcntl
-import shlex
 import logging
 import sys
 import atexit
 import signal
 import time
 
-from flask import Flask, redirect, request
+from dotenv import load_dotenv
+load_dotenv()
+
+from flask import Flask, request
 from flask_cors import CORS
 from flask_socketio import SocketIO
-from flask_login import LoginManager, login_user, logout_user, current_user, UserMixin
-from requests_oauthlib import OAuth2Session
-from dotenv import load_dotenv
+from flask_login import LoginManager, current_user
 
-from .utils.docker import attach_to_container, setup_isolated_network, spawn_container
+from .auth import auth_bp, load_user
+from .docker import attach_to_container, cleanup_containers, setup_isolated_network, spawn_container
 
 logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"  # Only for localhost/dev
-load_dotenv()
 
 app = Flask(__name__, template_folder=".", static_folder=".", static_url_path="")
 app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET")
+app.register_blueprint(auth_bp)
 
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN_DEV")
 CORS(app, origins=[FRONTEND_ORIGIN], supports_credentials=True)
 socketio = SocketIO(app, cors_allowed_origins=[FRONTEND_ORIGIN], manage_session=False)
 
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-REDIRECT_URI = os.getenv("REDIRECT_URI_DEV")
-
 login_manager = LoginManager()
 login_manager.init_app(app)
-
-
-class User(UserMixin):
-    def __init__(self, id_, email):
-        self.id = id_
-        self.email = email
-
-
-users = {}
-
-
-@login_manager.user_loader
-def load_user(user_id):
-    return users.get(user_id)
-
-
-@app.route("/login")
-def login():
-    google = OAuth2Session(GOOGLE_CLIENT_ID, redirect_uri=REDIRECT_URI, scope=["openid", "email", "profile"])
-    auth_url, _ = google.authorization_url(
-        "https://accounts.google.com/o/oauth2/auth", access_type="offline", prompt="select_account"
-    )
-    return redirect(auth_url)
-
-
-@app.route("/callback")
-def callback():
-    google = OAuth2Session(GOOGLE_CLIENT_ID, redirect_uri=REDIRECT_URI)
-    google.fetch_token(
-        "https://oauth2.googleapis.com/token",
-        client_secret=GOOGLE_CLIENT_SECRET,
-        authorization_response=request.url,
-    )
-    user_info = google.get("https://www.googleapis.com/oauth2/v2/userinfo").json()
-    user = User(user_info["id"], user_info["email"])
-    users[user.id] = user
-    login_user(user)
-    return redirect(f"{FRONTEND_ORIGIN}/terminal")
-
-
-@app.route("/logout")
-def logout():
-    logout_user()
-    return "", 200
-
-
-@app.route("/me")
-def me():
-    if current_user.is_authenticated:
-        return {"email": current_user.email}
-    return {"error": "unauthenticated"}, 401
-
+login_manager.user_loader(load_user)
 
 # each user gets a single container. But if they have multiple tabs open, each session will get its own sid (resize properties etc)
 # sid → {"child_pid": ..., "fd": ..., "container_name": ...}
@@ -272,23 +218,13 @@ def main():
     )
     logging.info(f"serving on http://{args.host}:{args.port}")
 
-    atexit.register(cleanup_containers)
+    atexit.register(cleanup_containers, user_containers)
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     signal.signal(signal.SIGINT, lambda *_: sys.exit(0))
 
     setup_isolated_network()
     os.makedirs("/tmp/paas_uploads", exist_ok=True)
     socketio.run(app, debug=args.debug, port=args.port, host=args.host)
-
-
-def cleanup_containers():
-    for info in user_containers.values():
-        name = info["container_name"]
-        logging.info(f"Stopping and removing container {name}")
-        try:
-            subprocess.run(["docker", "rm", "-f", name], check=True)
-        except subprocess.CalledProcessError as e:
-            logging.warning(f"Failed to remove container {name}: {e}")
 
 
 if __name__ == "__main__":

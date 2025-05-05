@@ -2,6 +2,7 @@ import os
 import pty
 import subprocess
 import platform
+import logging
 
 import psutil
 
@@ -108,3 +109,13 @@ def attach_to_container(container_name):
         close_fds=True,
     )
     return proc, master_fd
+
+
+def cleanup_containers(user_containers):
+    for info in user_containers.values():
+        name = info["container_name"]
+        logging.info(f"Stopping and removing container {name}")
+        try:
+            subprocess.run(["docker", "rm", "-f", name], check=True)
+        except subprocess.CalledProcessError as e:
+            logging.warning(f"Failed to remove container {name}: {e}")
