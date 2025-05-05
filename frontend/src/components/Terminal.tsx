@@ -65,8 +65,8 @@ export default function TerminalComponent() {
   }, []);
 
   return (
-    <>
-      <div className="flex justify-between items-center mb-4">
+    <div className="w-[calc(100%-2rem)] md:w-full max-w-screen-md h-full flex flex-col items-center justify-center">
+      <div className="w-full flex justify-between items-center mb-4">
         <UploadButton />
         <button
           onClick={handleLogout}
@@ -77,8 +77,8 @@ export default function TerminalComponent() {
       </div>
       <div
         ref={terminalRef}
-        className="border border-gray-300 rounded-sm p-1 bg-black w-[calc(100%-2rem)] md:w-full max-w-screen-md h-2/3 mx-2 sm:mx-4"
+        className="border border-gray-300 rounded-sm py-1 px-2 bg-black w-full h-2/3 mx-2 sm:mx-4"
       />
-    </>
+    </div>
   );
 }

@@ -158,11 +158,10 @@ def upload():
     upload_dir = f"/tmp/paas_uploads/{user_id}"
     os.makedirs(upload_dir, exist_ok=True)
 
-    files = request.files.getlist("file")
+    files = request.files.getlist("files")
     if not files:
         return "No files provided", 400
     for f in files:
-        print(f.filename)
         f.save(os.path.join(upload_dir, f.filename))
 
     return "File uploaded successfully", 200

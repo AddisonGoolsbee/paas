@@ -13,8 +13,8 @@
 - Logout DONE
 - Containers auto-close DONE
 - Upload files DONE
+- Half-decent UI DONE
 - Containers have better resource caps on CPU, network, RAM, etc
-- Half-decent UI
 - There is a resource-efficient way for the container to stay running after logging out
 - expose ip address
 
